@@ -338,7 +338,7 @@ signed portBASE_TYPE xTaskCreate (pdTASK_CODE pvTaskCode,
         portSTACK_TYPE *pxTopOfStack;
         
         prvInitialiseTCBVariables(pxNewTCB, usStackDepth, pcName, uxPriority);
-
+        
         #if portSTACK_GROWTH < 0 {
         	pxTopOfStack = pxNewTCB->pxStack + (pxNewTCB->usStackDepth - 1);
     	} #else {
@@ -348,32 +348,7 @@ signed portBASE_TYPE xTaskCreate (pdTASK_CODE pvTaskCode,
     
     	pxNewTCB->pxTopOfStack = pxPortInitialiseStack(pxTopOfStack, pvTaskCode, pvParameters);
     
-    	portENTER_CRITICAL(); {
-			uxCurrentNumberOfTasks++;
-		
-            if (uxCurrentNumberOfTasks == (unsigned portBASE_TYPE)1) {
-                pxCurrentTCB = pxNewTCB; 
-                
-                prvInitialiseTaskLists();
-            } else {
-                if (xSchedulerRunning == pdFALSE) {
-                    if (pxCurrentTCB->uxPriority <= uxPriority) {
-                        pxCurrentTCB = pxNewTCB; 
-                    }
-                }
-            } 
-
-            if (pxNewTCB->uxPriority > uxTopUsedPriority) {
-                uxTopUsedPriority = pxNewTCB->uxPriority;
-            }
-
-            pxNewTCB->uxTCBNumber = uxTaskNumber;
-            uxTaskNumber++;
-
-            prvAddTaskToReadyQueue(pxNewTCB); 
-            
-            xReturn = pdPASS;
-        }
+    	portENTER_CRITICAL();
     	portEXIT_CRITICAL();
 	} else {
 		xReturn = errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY;
@@ -392,6 +367,33 @@ signed portBASE_TYPE xTaskCreate (pdTASK_CODE pvTaskCode,
 	}
 
 	return xReturn;
+}
+
+void portENTER_CRITICAL (void) {
+    uxCurrentNumberOfTasks++;
+
+    if (uxCurrentNumberOfTasks == (unsigned portBASE_TYPE)1) {
+        pxCurrentTCB = pxNewTCB; 
+
+        prvInitialiseTaskLists();
+    } else {
+        if (xSchedulerRunning == pdFALSE) {
+            if (pxCurrentTCB->uxPriority <= uxPriority) {
+                pxCurrentTCB = pxNewTCB; 
+            }
+        }
+    } 
+
+    if (pxNewTCB->uxPriority > uxTopUsedPriority) {
+        uxTopUsedPriority = pxNewTCB->uxPriority;
+    }
+
+    pxNewTCB->uxTCBNumber = uxTaskNumber;
+    uxTaskNumber++;
+
+    prvAddTaskToReadyQueue(pxNewTCB); 
+
+    xReturn = pdPASS;
 }
 ```
 
@@ -429,21 +431,8 @@ signed portBASE_TYPE xTaskCreate (pdTASK_CODE pvTaskCode,
 #if (INCLUDE_vTaskDelete == 1)
 void vTaskDelete (xTaskHandle pxTaskToDelete) {
 	tskTCB *pxTCB; 
-	taskENTER_CRITICAL(); {
-		if (pxTaskToDelete == pxCurrentTCB) {
-			pxTaskToDelete = NULL;
-		} 
-
-        pxTCB = prvGetTCBFromHandle(pxTaskToDelete);
-		vListRemove(&(pxTCB->xGenericListItem));
-	
-        if (pxTCB->xEventListItem.pvContainer) {
-			vListRemove( &( pxTCB->xEventListItem ) );
-		}
-
-        vListInsertEnd((xList *) &xTasksWaitingTermination, &(pxTCB->xGenericListItem));
-		++uxTasksDeleted;
-	}
+    
+	taskENTER_CRITICAL();
     taskEXIT_CRITICAL();
     
 	if (xSchedulerRunning != pdFALSE) {
@@ -453,6 +442,22 @@ void vTaskDelete (xTaskHandle pxTaskToDelete) {
     }
 }
 #endif
+
+void taskENTER_CRITICAL (void) {
+    if (pxTaskToDelete == pxCurrentTCB) {
+        pxTaskToDelete = NULL;
+    } 
+
+    pxTCB = prvGetTCBFromHandle(pxTaskToDelete);
+    vListRemove(&(pxTCB->xGenericListItem));
+	
+    if (pxTCB->xEventListItem.pvContainer) {
+        vListRemove(&(pxTCB->xEventListItem));
+    }
+
+    vListInsertEnd((xList *) &xTasksWaitingTermination, &(pxTCB->xGenericListItem));
+    ++uxTasksDeleted;
+}
 ```
 
 1. 인자로 삭제되어야 할 Task의 Handle이 넘어옴
